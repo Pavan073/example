@@ -1,0 +1,103 @@
+---
+- name: Get Device Facts
+  hosts: localhost
+  vars:
+    kops_version: "1.9.0"
+    kops_download_path: "https://github.com/kubernetes/kops/releases/download/{{ kops_version }}/kops-linux-amd64"
+    kops_darwin_download_path: "https://github.com/kubernetes/kops/releases/download/{{ kops_version }}/kops-darwin-amd64"
+    kubectl_version: "v1.10.1"
+    kubectl_download_path: "https://storage.googleapis.com/kubernetes-release/release/{{ kubectl_version }}/bin/linux/amd64"
+    kubectl_darwin_download_path: "https://storage.googleapis.com/kubernetes-release/release/{{ kubectl_version }}/bin/darwin/amd64"
+    NAME:
+      mywipro.autormsdomain.de
+    ZONES:
+      ap-southeast-2a,ap-southeast-2b,ap-southeast-2c
+  tasks:
+    - name: Download Kubectl binaries
+      get_url:
+        url: "{{ kubectl_darwin_download_path }}/{{ item }}"
+        dest: /usr/local/bin
+        owner: root
+        group: admin
+        mode: 0755
+        force: yes
+    # TODO Add hash check
+      with_items:
+        - kubectl
+      when: ansible_os_family == 'Darwin'
+      become: true
+
+    - name: Download Kubectl binaries
+      get_url:
+        url: "{{ kubectl_download_path }}/{{ item }}"
+        dest: /usr/local/bin
+        owner: root
+        group: root
+        mode: 0755
+        force: yes
+    # TODO Add hash check
+      with_items:
+        - kubectl
+      when: ansible_os_family != 'Darwin'
+      become: true
+
+    - name: Download Kops binaries
+      get_url:
+        url: "{{ kops_darwin_download_path }}"
+        dest: /usr/local/bin/kops
+        owner: root
+        group: admin
+        mode: 0755
+        force: yes
+    # TODO Add hash check
+      when: ansible_os_family == 'Darwin'
+      become: true
+
+    - name: Download Kops binaries
+      get_url:
+        url: "{{ kops_download_path }}"
+        dest: /usr/local/bin/kops
+        owner: root
+        group: root
+        mode: 0755
+        force: yes
+    # TODO Add hash check
+      when: ansible_os_family != 'Darwin'
+      become: true
+
+    - name: Adding lines into bashrc file
+      lineinfile:
+        path: ~/.bashrc
+        line: 'NAME=mywipro.autormsdomain.de'
+
+    - name: Adding lines into bashrc file
+      lineinfile:
+        path: ~/.bashrc
+        line: 'ZONES=ap-southeast-2a,ap-southeast-2b,ap-southeast-2c'
+
+    - name: Echo my_env_var
+      shell: "echo $NAME"
+      environment:
+        NAME: mywipro.autormsdomain.de
+
+    - name: Echo my_env_var
+      shell: "echo $ZONES"
+      environment:
+        ZONES: ap-southeast-2a,ap-southeast-2b,ap-southeast-2c
+
+    - name: Create cluster
+      shell:
+        kops create cluster --node-count 3 --master-zones "{{ZONES}}" --zones "{{ZONES}}" --topology private --dns private --dns-zone autormsdomain.de --networking weave --api-loadbalancer-type=internal --vpc vpc-02ab42a4ab4b3c9e9 --subnets subnet-088e91c22c54bdebc,subnet-0d4a1a7da7bbfec64,subnet-086cafe978b15075c --utility-subnets subnet-088e91c22c54bdebc,subnet-0d4a1a7da7bbfec64,subnet-086cafe978b15075c "{{NAME}}"
+
+    - name: Update Cluster
+      shell: kops update cluster "{{NAME}}" --yes
+      register: result
+    - debug:
+        var: result
+
+    - name: sleep for 400 seconds and continue with play
+      wait_for: timeout=400
+      delegate_to: localhost
+
+    - name: Validate Cluster
+      shell: kops validate cluster "{{NAME}}"
